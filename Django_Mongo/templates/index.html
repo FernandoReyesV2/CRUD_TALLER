@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRUD Usuarios - Django + MongoDB</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .usuario-item {
+      transition: all 0.3s ease;
+    }
+    .editing {
+      background-color: #f0fdf4;
+      border-left: 4px solid #10b981;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+  <h1 class="text-3xl font-semibold mb-6">CRUD con Django y Mongo</h1>
+
+  <form id="form-crear" action="{% url 'crear' %}" method="POST" class="bg-white p-6 rounded shadow-md w-full max-w-md mb-8" novalidate>
+    {% csrf_token %}
+    <h2 class="text-xl font-medium mb-4">Crear nuevo usuario</h2>
+    <input 
+      type="text" 
+      id="crear-nombre"
+      name="nombre" 
+      placeholder="Nombre" 
+      required 
+      class="w-full p-2 mb-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+    />
+    <p id="error-nombre" class="text-red-600 text-sm mb-3 hidden"></p>
+    <input 
+      type="email" 
+      id="crear-email"
+      name="email" 
+      placeholder="Email" 
+      required 
+      class="w-full p-2 mb-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+    />
+    <p id="error-email" class="text-red-600 text-sm mb-3 hidden"></p>
+    <button 
+      type="submit" 
+      class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
+    >
+      Crear Usuario
+    </button>
+    <p id="error-crear" class="text-red-600 mt-2 hidden"></p>
+  </form>
+
+  <div class="w-full max-w-md">
+    <h2 class="text-xl font-medium mb-4">Usuarios existentes</h2>
+    <ul id="usuarios" class="space-y-3">
+    </ul>
+  </div>
+
+  <script>
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    const formCrear = document.getElementById('form-crear');
+    const listaUsuarios = document.getElementById('usuarios');
+    const errorCrear = document.getElementById('error-crear');
+
+    const API_URL = {
+      crear: '{% url "crear" %}',
+      obtener: '{% url "obtener_usuarios" %}',
+      actualizar: id => `{% url "actualizar" "0" %}`.replace('0', id),
+      eliminar: id => `{% url "eliminar" "0" %}`.replace('0', id),
+      verificarEmail: email => `{% url "verificar_email" "0" %}`.replace('0', email)
+    };
+
+    document.addEventListener('DOMContentLoaded', cargarUsuarios);
+
+    function validarNombre(nombre) {
+      const regex = /^[A-Za-zÁÉÍÓÚáéíóúñÑ]+$/;
+      
+      if (nombre.length < 2) {
+        return { valido: false, mensaje: 'El nombre debe tener al menos 2 caracteres' };
+      }
+      
+      if (nombre.length > 30) {
+        return { valido: false, mensaje: 'El nombre no puede exceder los 30 caracteres' };
+      }
+      
+      if (!regex.test(nombre)) {
+        return { valido: false, mensaje: 'El nombre solo puede contener letras y tildes (sin espacios)' };
+      }
+      
+      return { valido: true, mensaje: '' };
+    }
+
+    function validarEmail(email) {
+      const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      if (!regex.test(email)) {
+        return { valido: false, mensaje: 'Por favor ingresa un email válido' };
+      }
+      
+      return { valido: true, mensaje: '' };
+    }
+
+    async function verificarEmailExistente(email) {
+      try {
+        const response = await fetch(API_URL.verificarEmail(email));
+        const data = await response.json();
+        return data.existe;
+      } catch (error) {
+        console.error('Error verificando email:', error);
+        return false;
+      }
+    }
+
+    document.getElementById('crear-nombre').addEventListener('input', function() {
+      const nombre = this.value;
+      const errorElement = document.getElementById('error-nombre');
+      const validacion = validarNombre(nombre);
+      
+      if (!validacion.valido) {
+        errorElement.textContent = validacion.mensaje;
+        errorElement.classList.remove('hidden');
+      } else {
+        errorElement.classList.add('hidden');
+      }
+    });
+
+    document.getElementById('crear-email').addEventListener('input', function() {
+      const email = this.value;
+      const errorElement = document.getElementById('error-email');
+      const validacion = validarEmail(email);
+      
+      if (!validacion.valido) {
+        errorElement.textContent = validacion.mensaje;
+        errorElement.classList.remove('hidden');
+      } else {
+        errorElement.classList.add('hidden');
+      }
+    });
+
+    formCrear.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const nombre = document.getElementById('crear-nombre').value.toUpperCase();
+      const email = document.getElementById('crear-email').value;
+      
+      const validacionNombre = validarNombre(nombre);
+      const validacionEmail = validarEmail(email);
+      
+      if (!validacionNombre.valido) {
+        document.getElementById('error-nombre').textContent = validacionNombre.mensaje;
+        document.getElementById('error-nombre').classList.remove('hidden');
+        return;
+      }
+      
+      if (!validacionEmail.valido) {
+        document.getElementById('error-email').textContent = validacionEmail.mensaje;
+        document.getElementById('error-email').classList.remove('hidden');
+        return;
+      }
+      
+      const emailExiste = await verificarEmailExistente(email);
+      if (emailExiste) {
+        document.getElementById('error-email').textContent = 'Este email ya está registrado';
+        document.getElementById('error-email').classList.remove('hidden');
+        return;
+      }
+
+      const data = {
+        nombre: nombre,
+        email: email
+      };
+
+      try {
+        const response = await fetch(API_URL.crear, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          formCrear.reset();
+          errorCrear.classList.add('hidden');
+          cargarUsuarios();
+        } else {
+          throw new Error(result.error || 'Error al crear usuario');
+        }
+      } catch (error) {
+        errorCrear.textContent = error.message;
+        errorCrear.classList.remove('hidden');
+      }
+    });
+
+    async function cargarUsuarios() {
+      try {
+        const response = await fetch(API_URL.obtener);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('La respuesta no es JSON');
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) throw new Error(data.error);
+        const usuarios = data.usuarios; 
+        
+        listaUsuarios.innerHTML = usuarios.map(usuario => `
+          <li id="usuario-${usuario.id}" class="usuario-item bg-white p-3 rounded shadow">
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="font-medium">${usuario.nombre}</p>
+                <p class="text-gray-600 text-sm">${usuario.email}</p>
+              </div>
+              <div class="flex space-x-2">
+                <button onclick="editarUsuario('${usuario.id}', '${usuario.nombre}', '${usuario.email}')" 
+                  class="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm">
+                  Editar
+                </button>
+                <button onclick="eliminarUsuario('${usuario.id}')" 
+                  class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
+                  Eliminar
+                </button>
+              </div>
+            </div>
+            <div id="form-actualizar-${usuario.id}" class="mt-3 hidden">
+              <div class="flex space-x-2">
+                <input 
+                  type="text" 
+                  id="actualizar-nombre-${usuario.id}"
+                  value="${usuario.nombre}" 
+                  class="flex-1 p-1 border border-gray-300 rounded text-sm"
+                />
+                <input 
+                  type="email" 
+                  id="actualizar-email-${usuario.id}"
+                  value="${usuario.email}" 
+                  class="flex-1 p-1 border border-gray-300 rounded text-sm"
+                />
+              </div>
+              <div class="flex justify-end space-x-2 mt-2">
+                <button onclick="cancelarEdicion('${usuario.id}')" 
+                  class="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm">
+                  Cancelar
+                </button>
+                <button onclick="guardarCambios('${usuario.id}')" 
+                  class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                  Guardar
+                </button>
+              </div>
+              <p id="error-actualizar-${usuario.id}" class="text-red-600 text-xs mt-1 hidden"></p>
+            </div>
+          </li>
+        `).join('');
+      } catch (error) {
+        console.error('Error cargando usuarios:', error);
+        listaUsuarios.innerHTML = `
+          <li class="text-red-500 p-4 bg-red-50 rounded">
+            Error al cargar usuarios: ${error.message}
+          </li>
+        `;
+      }
+    }
+
+    function editarUsuario(id, nombre, email) {
+      document.querySelectorAll('[id^="form-actualizar-"]').forEach(el => {
+        el.classList.add('hidden');
+      });
+      
+      const formActualizar = document.getElementById(`form-actualizar-${id}`);
+      formActualizar.classList.remove('hidden');
+      
+      const usuarioItem = document.getElementById(`usuario-${id}`);
+      usuarioItem.classList.add('editing');
+    }
+
+    function cancelarEdicion(id) {
+      document.getElementById(`form-actualizar-${id}`).classList.add('hidden');
+      document.getElementById(`usuario-${id}`).classList.remove('editing');
+    }
+
+    async function guardarCambios(id) {
+      let nombre = document.getElementById(`actualizar-nombre-${id}`).value;
+      nombre = nombre.toUpperCase();
+      const email = document.getElementById(`actualizar-email-${id}`).value;
+      const errorElement = document.getElementById(`error-actualizar-${id}`);
+      
+      const validacionNombre = validarNombre(nombre);
+      const validacionEmail = validarEmail(email);
+      
+      if (!validacionNombre.valido) {
+        errorElement.textContent = validacionNombre.mensaje;
+        errorElement.classList.remove('hidden');
+        return;
+      }
+      
+      if (!validacionEmail.valido) {
+        errorElement.textContent = validacionEmail.mensaje;
+        errorElement.classList.remove('hidden');
+        return;
+      }
+
+      const data = {
+        nombre: nombre,
+        email: email
+      };
+
+      try {
+        const response = await fetch(API_URL.actualizar(id), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          cancelarEdicion(id);
+          cargarUsuarios();
+        } else {
+          throw new Error(result.error || 'Error al actualizar usuario');
+        }
+      } catch (error) {
+        errorElement.textContent = error.message;
+        errorElement.classList.remove('hidden');
+      }
+    }
+
+    async function eliminarUsuario(id) {
+      if (!confirm('¿Estás seguro de eliminar este usuario?')) return;
+
+      try {
+        const response = await fetch(API_URL.eliminar(id), {
+          method: 'DELETE',
+          headers: {
+            'X-CSRFToken': csrfToken
+          }
+        });
+
+        if (response.ok) {
+          cargarUsuarios();
+        } else {
+          throw new Error('Error al eliminar usuario');
+        }
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+  </script>
+</body>
+</html>

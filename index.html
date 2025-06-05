@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRUD Usuarios - Node + Mongo y PostgreSQL</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+  <h1 class="text-3xl font-semibold mb-6">CRUD Usuarios</h1>
+
+  <form id="form-crear" action="/crear" method="POST" class="bg-white p-6 rounded shadow-md w-full max-w-md mb-8" novalidate>
+    <h2 class="text-xl font-medium mb-4">Crear nuevo usuario</h2>
+    <input 
+      type="text" 
+      id="crear-nombre"
+      name="nombre" 
+      placeholder="Nombre" 
+      required 
+      class="w-full p-2 mb-4 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+    />
+    <input 
+      type="email" 
+      id="crear-email"
+      name="email" 
+      placeholder="Email" 
+      required 
+      class="w-full p-2 mb-4 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+    />
+    <button 
+      type="submit" 
+      class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
+    >
+      Crear Usuario
+    </button>
+    <p id="error-crear" class="text-red-600 mt-2 hidden"></p>
+  </form>
+
+  <div class="w-full max-w-md">
+    <h2 class="text-xl font-medium mb-4">Usuarios existentes</h2>
+    <ul id="usuarios" class="space-y-6">
+    </ul>
+  </div>
+
+  <script>
+    function validarNombre(nombre) {
+      const regex = /^[A-Za-zÁÉÍÓÚáéíóú]+$/;
+      return regex.test(nombre);
+    }
+
+    function validarEmail(email) {
+      const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return regex.test(email.trim());
+    }
+
+    
+    function normalizarNombre(nombre) {
+      return nombre.replace(/\s+/g, '').toUpperCase();
+    }
+
+    
+    const formCrear = document.getElementById('form-crear');
+    const errorCrear = document.getElementById('error-crear');
+
+    formCrear.addEventListener('submit', e => {
+      errorCrear.classList.add('hidden');
+      errorCrear.textContent = '';
+
+      let nombre = formCrear['nombre'].value;
+      let email = formCrear['email'].value;
+
+      if (!validarNombre(nombre)) {
+        e.preventDefault();
+        errorCrear.textContent = 'Nombre inválido: solo letras y tildes, sin espacios.';
+        errorCrear.classList.remove('hidden');
+        return;
+      }
+
+      if (!validarEmail(email)) {
+        e.preventDefault();
+        errorCrear.textContent = 'Email inválido.';
+        errorCrear.classList.remove('hidden');
+        return;
+      }
+
+      formCrear['nombre'].value = normalizarNombre(nombre);
+      formCrear['email'].value = email.trim();
+    });
+
+    
+    async function cargarUsuarios() {
+      const res = await fetch('/usuarios');
+      const data = await res.json();
+      const lista = document.getElementById('usuarios');
+      lista.innerHTML = '';
+
+      data.forEach(user => {
+        const li = document.createElement('li');
+        li.className = 'bg-white p-4 rounded shadow flex flex-col gap-3';
+
+        li.innerHTML = `
+          <div class="flex justify-between items-center">
+            <span class="font-semibold">${user.nombre} - <span class="text-sm text-gray-600">${user.email}</span></span>
+            <form style="display:inline" action="/eliminar/${user._id}" method="POST">
+              <button type="submit" class="text-red-600 hover:underline">Eliminar</button>
+            </form>
+          </div>
+          <form class="flex gap-2 flex-wrap items-center" action="/actualizar/${user._id}" method="POST" novalidate>
+            <input 
+              name="nombre" 
+              placeholder="Nuevo nombre (sin espacios)" 
+              required 
+              class="flex-1 min-w-[120px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <input 
+              name="email" 
+              placeholder="Nuevo email" 
+              required 
+              class="flex-1 min-w-[150px] p-2 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <button 
+              type="submit" 
+              class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition whitespace-nowrap"
+            >
+              Actualizar
+            </button>
+            <p class="text-red-600 mt-1 w-full hidden"></p>
+          </form>
+        `;
+
+        
+        const formActualizar = li.querySelector('form[action^="/actualizar"]');
+        const errorActualizar = formActualizar.querySelector('p');
+
+        formActualizar.addEventListener('submit', e => {
+          errorActualizar.classList.add('hidden');
+          errorActualizar.textContent = '';
+
+          const nombreInput = formActualizar['nombre'].value;
+          const emailInput = formActualizar['email'].value;
+
+          if (!validarNombre(nombreInput)) {
+            e.preventDefault();
+            errorActualizar.textContent = 'Nombre inválido: solo letras y tildes, sin espacios.';
+            errorActualizar.classList.remove('hidden');
+            return;
+          }
+
+          if (!validarEmail(emailInput)) {
+            e.preventDefault();
+            errorActualizar.textContent = 'Email inválido.';
+            errorActualizar.classList.remove('hidden');
+            return;
+          }
+
+          formActualizar['nombre'].value = normalizarNombre(nombreInput);
+          formActualizar['email'].value = emailInput.trim();
+        });
+
+        lista.appendChild(li);
+      });
+    }
+
+    cargarUsuarios();
+  </script>
+
+</body>
+</html>
